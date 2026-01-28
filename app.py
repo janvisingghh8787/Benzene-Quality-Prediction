@@ -2,16 +2,16 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 
-from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
-
-# Try importing XGBoost safely
+# ===============================
+# SAFE ML IMPORTS (NO CRASH)
+# ===============================
 try:
-    from xgboost import XGBRegressor
-    xgb_available = True
-except:
-    xgb_available = False
+    from sklearn.model_selection import train_test_split
+    from sklearn.ensemble import RandomForestRegressor
+    from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
+    sklearn_available = True
+except Exception:
+    sklearn_available = False
 
 # ===============================
 # Page Configuration
@@ -21,201 +21,208 @@ st.set_page_config(
     layout="wide"
 )
 
-# ===============================
-# App Title
-# ===============================
 st.title("Benzene Concentration Prediction in Isomerization Unit")
 st.write(
-    "End-to-end machine learning application for exploratory data analysis, "
-    "feature selection, model training, evaluation, and benzene concentration prediction."
+    "End-to-end data analytics and machine learning application for "
+    "industrial process data."
 )
 
 # ===============================
 # File Upload
 # ===============================
 uploaded_file = st.file_uploader(
-    "Upload Process and Lab Data (CSV)",
+    "Upload Process & Lab Data (CSV)",
     type=["csv"]
 )
 
-if uploaded_file is not None:
-    df = pd.read_csv(uploaded_file)
+if uploaded_file is None:
+    st.info("Please upload a CSV file to begin.")
+    st.stop()
 
-    # ===============================
-    # Data Preview
-    # ===============================
-    st.subheader("Data Preview")
-    st.dataframe(df.head())
+# ===============================
+# READ & CLEAN DATA (CRITICAL FIX)
+# ===============================
+df = pd.read_csv(uploaded_file)
 
-    # ===============================
-    # Dataset Overview
-    # ===============================
-    col1, col2 = st.columns(2)
-    col1.metric("Rows", df.shape[0])
-    col2.metric("Columns", df.shape[1])
+# Convert everything to string first
+df = df.astype(str)
 
-    # ===============================
-    # Missing Data Overview
-    # ===============================
-    st.subheader("Missing Data Overview")
-    missing_values = df.isnull().sum()
-    st.write(missing_values)
+# Remove units, commas, symbols (keep digits, dot, minus)
+df = df.replace(
+    to_replace=r"[^\d\.\-]+",
+    value="",
+    regex=True
+)
 
-    total_missing = int(missing_values.sum())
-    total_present = df.size - total_missing
+# Convert to numeric where possible
+df = df.apply(pd.to_numeric, errors="ignore")
 
-    st.bar_chart(
-        pd.DataFrame(
-            {"Count": [total_present, total_missing]},
-            index=["Available Data", "Missing Data"]
-        )
+# ===============================
+# Data Preview
+# ===============================
+st.subheader("Data Preview")
+st.dataframe(df.head())
+
+# ===============================
+# Debug: Show Detected Numeric Columns
+# ===============================
+st.subheader("Detected Numeric Columns")
+numeric_cols = df.select_dtypes(include=np.number).columns.tolist()
+st.write(numeric_cols)
+
+if len(numeric_cols) == 0:
+    st.error(
+        "No numeric columns detected even after cleaning.\n\n"
+        "Please check your CSV values."
     )
+    st.stop()
 
-    # ===============================
-    # Feature Selection
-    # ===============================
-    st.subheader("Feature Selection")
+# ===============================
+# Dataset Overview
+# ===============================
+c1, c2 = st.columns(2)
+c1.metric("Rows", df.shape[0])
+c2.metric("Columns", df.shape[1])
 
-    numeric_columns = df.select_dtypes(include=np.number).columns.tolist()
+# ===============================
+# Missing Values
+# ===============================
+st.subheader("Missing Values")
+missing = df.isnull().sum()
+st.write(missing)
 
-    selected_features = st.multiselect(
-        "Select input features",
-        options=numeric_columns
+st.bar_chart(
+    pd.DataFrame(
+        {
+            "Count": [
+                df.size - missing.sum(),
+                missing.sum()
+            ]
+        },
+        index=["Available", "Missing"]
     )
+)
 
-    target_column = st.selectbox(
-        "Select target variable (Benzene concentration)",
-        options=numeric_columns
-    )
+# ===============================
+# Feature Selection (FIXED)
+# ===============================
+st.subheader("Feature Selection")
 
-    if not selected_features or not target_column:
-        st.warning("Please select features and target variable.")
-        st.stop()
+features = st.multiselect(
+    "Select input features",
+    numeric_cols
+)
 
-    if target_column in selected_features:
-        selected_features.remove(target_column)
+target = st.selectbox(
+    "Select target (Benzene concentration)",
+    numeric_cols
+)
 
-    # ===============================
-    # Feature Comparison
-    # ===============================
+if not features or not target:
+    st.warning("Select at least one feature and a target.")
+    st.stop()
+
+if target in features:
+    features.remove(target)
+
+# ===============================
+# Feature Comparison
+# ===============================
+if len(features) >= 2:
     st.subheader("Feature Comparison")
 
-    if len(selected_features) >= 2:
-        fx = st.selectbox("Feature X", selected_features)
-        fy = st.selectbox("Feature Y", selected_features, index=1)
+    fx = st.selectbox("Feature X", features)
+    fy = st.selectbox("Feature Y", features, index=1)
 
-        comp_df = df[[fx, fy]].dropna()
+    comp = df[[fx, fy]].dropna()
 
-        st.scatter_chart(comp_df, x=fx, y=fy)
-        st.line_chart(comp_df)
+    st.scatter_chart(comp, x=fx, y=fy)
+    st.line_chart(comp)
 
-        corr_val = comp_df[fx].corr(comp_df[fy])
-        st.metric("Pearson Correlation", round(corr_val, 4))
+    corr = comp[fx].corr(comp[fy])
+    st.metric("Pearson Correlation", round(corr, 4))
 
-        if abs(corr_val) >= 0.8:
-            st.success("Strong correlation detected")
-        elif abs(corr_val) >= 0.5:
-            st.warning("Moderate correlation detected")
-        else:
-            st.info("ℹWeak correlation detected")
+    if abs(corr) >= 0.8:
+        st.success("Strong correlation detected")
+    elif abs(corr) >= 0.5:
+        st.warning("Moderate correlation detected")
+    else:
+        st.info("Weak correlation detected")
 
-        st.download_button(
-            "Download Comparison Data",
-            comp_df.to_csv(index=False),
-            file_name=f"{fx}_vs_{fy}.csv",
-            mime="text/csv"
+    st.download_button(
+        "Download Comparison Data",
+        comp.to_csv(index=False),
+        file_name=f"{fx}_vs_{fy}.csv"
+    )
+
+# ===============================
+# MACHINE LEARNING SECTION
+# ===============================
+st.subheader("Machine Learning")
+
+if not sklearn_available:
+    st.error(
+        "Machine learning libraries are not available in this cloud environment.\n\n"
+        "EDA and feature analysis work correctly.\n"
+        "Model training can be demonstrated locally."
+    )
+    st.stop()
+
+# ===============================
+# Model Training
+# ===============================
+X = df[features].fillna(df[features].mean())
+y = df[target].fillna(df[target].mean())
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
+
+if st.button("Train Random Forest Model"):
+    model = RandomForestRegressor(
+        n_estimators=200,
+        random_state=42
+    )
+    model.fit(X_train, y_train)
+
+    preds = model.predict(X_test)
+
+    r2 = r2_score(y_test, preds)
+    rmse = mean_squared_error(y_test, preds, squared=False)
+    mae = mean_absolute_error(y_test, preds)
+
+    m1, m2, m3 = st.columns(3)
+    m1.metric("R²", round(r2, 4))
+    m2.metric("RMSE", round(rmse, 4))
+    m3.metric("MAE", round(mae, 4))
+
+    # ===============================
+    # Feature Importance
+    # ===============================
+    st.subheader("Feature Importance")
+    imp_df = pd.DataFrame({
+        "Feature": features,
+        "Importance": model.feature_importances_
+    }).sort_values(by="Importance", ascending=False)
+
+    st.bar_chart(imp_df.set_index("Feature"))
+
+    # ===============================
+    # Final Prediction
+    # ===============================
+    st.subheader("Final Benzene Concentration Prediction")
+
+    input_vals = {}
+    for f in features:
+        input_vals[f] = st.number_input(
+            f"Enter {f}",
+            float(X[f].mean())
         )
 
-    # ===============================
-    # Model Training
-    # ===============================
-    st.subheader("Model Training")
+    if st.button("Predict"):
+        pred = model.predict(pd.DataFrame([input_vals]))[0]
+        st.success(
+            f"Predicted Benzene Concentration: **{round(pred, 4)}**"
+        )
 
-    model_choice = st.selectbox(
-        "Select ML Model",
-        ["Random Forest", "XGBoost (if available)"]
-    )
-
-    X = df[selected_features]
-    y = df[target_column]
-
-    X = X.fillna(X.mean())
-    y = y.fillna(y.mean())
-
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42
-    )
-
-    if st.button("Train Model"):
-        if model_choice == "Random Forest":
-            model = RandomForestRegressor(
-                n_estimators=200,
-                random_state=42
-            )
-
-        elif model_choice == "XGBoost (if available)":
-            if not xgb_available:
-                st.error("XGBoost is not installed in this environment.")
-                st.stop()
-            model = XGBRegressor(
-                n_estimators=200,
-                learning_rate=0.05,
-                random_state=42
-            )
-
-        model.fit(X_train, y_train)
-        y_pred = model.predict(X_test)
-
-        # ===============================
-        # Model Metrics
-        # ===============================
-        st.subheader("Model Performance Metrics")
-
-        r2 = r2_score(y_test, y_pred)
-        rmse = mean_squared_error(y_test, y_pred, squared=False)
-        mae = mean_absolute_error(y_test, y_pred)
-
-        m1, m2, m3 = st.columns(3)
-        m1.metric("R² Score", round(r2, 4))
-        m2.metric("RMSE", round(rmse, 4))
-        m3.metric("MAE", round(mae, 4))
-
-        # ===============================
-        # Feature Importance
-        # ===============================
-        st.subheader("Feature Importance")
-
-        if hasattr(model, "feature_importances_"):
-            importance_df = pd.DataFrame({
-                "Feature": selected_features,
-                "Importance": model.feature_importances_
-            }).sort_values(by="Importance", ascending=False)
-
-            st.bar_chart(
-                importance_df.set_index("Feature")
-            )
-
-        # ===============================
-        # Final Prediction
-        # ===============================
-        st.subheader("Final Benzene Concentration Prediction")
-
-        input_data = {}
-        for feature in selected_features:
-            input_data[feature] = st.number_input(
-                f"Enter value for {feature}",
-                float(X[feature].mean())
-            )
-
-        if st.button("Predict Benzene Concentration"):
-            input_df = pd.DataFrame([input_data])
-            prediction = model.predict(input_df)[0]
-            st.success(
-                f"Predicted Benzene Concentration: **{round(prediction, 4)}**"
-            )
-
-        st.success("Model training and prediction completed successfully!")
-
-else:
-    st.info("Please upload a CSV file to begin.")
 
