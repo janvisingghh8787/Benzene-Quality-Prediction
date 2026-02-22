@@ -65,6 +65,13 @@ Random Forest Regressor achieved the best performance with:
 7. Final Model Selection  
 
 ---
+## 🚀 Live Deployment
+
+The machine learning model has been deployed using Streamlit for real-time prediction.
+
+🔗 Live App: https://benzene-quality-prediction.streamlit.app/
+
+Users can input refinery process parameters and instantly receive predicted benzene quality values.
 
 ## 📂 Project Structure
 Benzene-Quality-Prediction/
